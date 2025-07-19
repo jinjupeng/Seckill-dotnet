@@ -1,0 +1,6 @@
+@Seckill_dotnet_HostAddress = http://localhost:5116
+
+GET {{Seckill_dotnet_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

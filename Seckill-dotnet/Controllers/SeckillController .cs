@@ -1,0 +1,47 @@
+﻿using Microsoft.AspNetCore.Mvc;
+using Seckill_dotnet.Models;
+using Seckill_dotnet.Services;
+
+namespace Seckill_dotnet.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public class SeckillController : ControllerBase
+    {
+        private readonly SeckillService _seckillService;
+        private readonly InventoryService _inventoryService;
+
+        public SeckillController(SeckillService seckillService, InventoryService inventoryService)
+        {
+            _seckillService = seckillService;
+            _inventoryService = inventoryService;
+        }
+
+        [HttpPost("InitStock")]
+        public async Task<IActionResult> InitStock([FromBody] InitStockRequest request)
+        {
+            // 1. 验证用户身份（JWT等）
+
+            // 由于秒杀系统的高并发特性，通常会将库存数据存储在缓存中
+            await _inventoryService.InitializeProductStockAsync(request.ProductId, request.Stock);
+            return Ok($"初始化库存，产品ID = {request.ProductId}，产品库存 = {request.Stock}");
+        }
+
+        [HttpPost("Order")]
+        public async Task<IActionResult> Order([FromBody] SeckillRequest request)
+        {
+            // 1. 验证用户身份（JWT等）
+
+            //string userId = new Random().Next().ToString();
+            //string productId = "string";
+            //var result = await _seckillService.ProcessSeckillAsync(userId, productId);
+            var result = await _seckillService.ProcessSeckillAsync(request.UserId, request.ProductId);
+            if (result)
+            {
+                return Ok("秒杀成功！");
+            }
+
+            return BadRequest("秒杀失败，库存不足或已经秒杀过");
+        }
+    }
+}
