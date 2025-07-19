@@ -44,12 +44,9 @@ namespace Seckill_dotnet.Services
                         var message = JsonSerializer.Deserialize<OrderMessage>(mesjson);
 
                         await orderService.CreateOrderAsync(message);
-
-                        // 消息确认
-                        await channel.BasicAckAsync(deliveryTag: default, false, stoppingToken);
                     }, stoppingToken);
 
-                    await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken); // 添加延迟，避免空循环消耗CPU资源
+                    await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken); // 添加延迟，避免空循环消耗CPU资源
                 }
                 catch (Exception ex)
                 {

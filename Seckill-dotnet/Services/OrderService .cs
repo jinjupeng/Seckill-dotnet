@@ -18,7 +18,7 @@ namespace Seckill_dotnet.Services
         public async Task CreateOrderAsync(OrderMessage message)
         {
             // 使用分布式锁防止重复消费（例如，在分布式部署中，多个消费者实例可能同时处理同一个消息，但通过分布式锁可以保证只有一个实例处理）
-            string resourceId = "order_lock:" + message.OrderId;
+            string resourceId = "seckill_lock:product:" + message.ProductId;
             using (var redLock = await _lockFactory.CreateLockAsync(resourceId, TimeSpan.FromSeconds(30)))
             {
                 if (redLock.IsAcquired)
@@ -28,14 +28,15 @@ namespace Seckill_dotnet.Services
 
                     if (orderExisting != null)
                     {
+                        Console.WriteLine("订单已存在：" + message.OrderId + " UserId：" + message.UserId);
                         return; // 订单已存在，直接返回
                     }
 
 
-                    // 将订单保存到数据库
+                    // 创建新的订单，保存到数据库
                     var order = new Order
                     {
-                        Id = Guid.NewGuid().ToString(),
+                        Id = message.OrderId,
                         UserId = message.UserId,
                         ProductId = message.ProductId,
                         OrderTime = DateTime.UtcNow
@@ -44,15 +45,15 @@ namespace Seckill_dotnet.Services
                     await _context.Orders.AddAsync(order);
 
 
-                    //// 更新数据库库存（可选，Redis为主库存）
-                    //var productExisting = await _context.Products.AsNoTracking().FirstOrDefaultAsync(x => x.Id == message.ProductId);
+                    // 更新数据库库存（可选，Redis为主库存）
+                    var productExisting = await _context.Products.AsNoTracking().FirstOrDefaultAsync(x => x.Id == message.ProductId);
 
-                    //if (productExisting == null || productExisting.Stock <= 0)
-                    //{
-                    //    return; // 商品不存在或者库存为0
-                    //}
-                    //productExisting.Stock = productExisting.Stock - 1;
-                    //_context.Update(productExisting);
+                    if (productExisting == null || productExisting.Stock <= 0)
+                    {
+                        return; // 商品不存在或者库存为0
+                    }
+                    productExisting.Stock = productExisting.Stock - 1;
+                    _context.Update(productExisting);
 
                     await _context.SaveChangesAsync();
                 }

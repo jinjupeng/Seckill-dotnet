@@ -59,22 +59,24 @@ namespace Seckill_dotnet.RabbitMQ
                 {
                     // 直接传递 model 和 body 给 callback，不需要转换
                     await callback(channel, body);
+                    // 消息确认，手动 ACK
+                    await channel.BasicAckAsync(ea.DeliveryTag, false, cancellationToken);
                 }
                 catch(Exception ex)
                 {
-                    // 处理失败，可以记录日志并重试或者放入死信队列
+                    // 处理失败，拒绝消息并重新入队
                     //await channel.BasicNackAsync(ea.DeliveryTag, false, true);
 
+                    // 处理失败，拒绝消息并放入死信队列
+                    await channel.BasicNackAsync(ea.DeliveryTag, false, false);
+
+                    // 记录日志
                     _logger.LogError("消息队列接收消息出现异常：{}，{}", ex.Message, ex.StackTrace);
-                }
-                finally
-                {
-                    //await channel.BasicAckAsync(ea.DeliveryTag, false, cancellationToken);
                 }
             };
             await channel.BasicConsumeAsync(queue: queueName, autoAck: false, consumer: consumer, cancellationToken: cancellationToken);
             // Prevent the method from returning immediately
-            await Task.Delay(-1, cancellationToken);
+            //await Task.Delay(-1, cancellationToken);
         }
     }
 }

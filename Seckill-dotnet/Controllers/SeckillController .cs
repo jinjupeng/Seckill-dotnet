@@ -24,6 +24,14 @@ namespace Seckill_dotnet.Controllers
 
             // 由于秒杀系统的高并发特性，通常会将库存数据存储在缓存中
             await _inventoryService.InitializeProductStockAsync(request.ProductId, request.Stock);
+            if (string.IsNullOrEmpty(request.ProductId))
+            {
+                return BadRequest("产品ID不能为空");
+            }
+            if (request.Stock <= 0)
+            {
+                return BadRequest("商品库存不能为0或负数");
+            }
             return Ok($"初始化库存，产品ID = {request.ProductId}，产品库存 = {request.Stock}");
         }
 
@@ -32,10 +40,10 @@ namespace Seckill_dotnet.Controllers
         {
             // 1. 验证用户身份（JWT等）
 
-            //string userId = new Random().Next().ToString();
-            //string productId = "string";
-            //var result = await _seckillService.ProcessSeckillAsync(userId, productId);
-            var result = await _seckillService.ProcessSeckillAsync(request.UserId, request.ProductId);
+            string userId = new Random().Next().ToString();
+            string productId = "string";
+            var result = await _seckillService.ProcessSeckillAsync(userId, productId);
+            //var result = await _seckillService.ProcessSeckillAsync(request.UserId, request.ProductId);
             if (result)
             {
                 return Ok("秒杀成功！");
