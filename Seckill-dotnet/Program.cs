@@ -99,6 +99,42 @@ namespace Seckill_dotnet
 
             var app = builder.Build();
 
+            // 应用数据库迁移
+            using (var scope = app.Services.CreateScope())
+            {
+                var services = scope.ServiceProvider;
+                var logger = services.GetRequiredService<ILogger<Program>>();
+
+                try
+                {
+                    var dbContext = services.GetRequiredService<SeckillContext>();
+
+                    // 检查是否需要迁移
+                    var pendingMigrations = dbContext.Database.GetPendingMigrations();
+                    if (pendingMigrations.Any())
+                    {
+                        logger.LogInformation("应用 {Count} 个挂起的数据库迁移...", pendingMigrations.Count());
+                        dbContext.Database.Migrate();
+                        logger.LogInformation("数据库迁移完成");
+                    }
+                    else
+                    {
+                        logger.LogInformation("没有挂起的数据库迁移");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "数据库迁移过程中发生错误");
+
+                    // 生产环境中可能需要终止应用
+                    if (app.Environment.IsProduction())
+                    {
+                        throw;
+                    }
+                }
+            }
+
+
             // Configure the HTTP request pipeline.
             if (app.Environment.IsDevelopment())
             {

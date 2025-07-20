@@ -4,6 +4,9 @@ using StackExchange.Redis;
 
 namespace Seckill_dotnet.Services
 {
+    /**
+    *库存服务
+    */
     public class InventoryService
     {
         private readonly IConnectionMultiplexer _redis;
