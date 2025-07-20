@@ -1,7 +1,6 @@
 
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
 using RedLockNet;
@@ -10,6 +9,7 @@ using RedLockNet.SERedis.Configuration;
 using Seckill_dotnet.Config;
 using Seckill_dotnet.Infrastructure;
 using Seckill_dotnet.RabbitMQ;
+using Seckill_dotnet.Redis;
 using Seckill_dotnet.Services;
 using StackExchange.Redis;
 
@@ -71,19 +71,10 @@ namespace Seckill_dotnet
                 };
             });
 
-            // 绑定RabbitMQ配置
-            builder.Services.Configure<RabbitMQOptions>(builder.Configuration.GetSection("RabbitMQ"));
-
-            // 注册RabbitMQ连接工厂
-            builder.Services.AddSingleton<IRabbitMQConnection, RabbitMQConnection>(sp =>
-            {
-                var options = sp.GetRequiredService<IOptions<RabbitMQOptions>>().Value;
-                var factory = new ConnectionFactory() { HostName = options.HostName, Port = options.Port, UserName = options.UserName, Password = options.Password };
-                return new RabbitMQConnection(factory);
-            });
-
             // 添加RabbitMQService的服务注册
             builder.Services.AddSingleton<RabbitMQService>();
+            builder.Services.AddSingleton<RabbitMQConnection>();
+            builder.Services.AddSingleton<RabbitMqChannelManager>();
 
             builder.Services.AddHostedService<OrderProcessingWorker>(); // 后台服务消费者，模拟订单处理
 
@@ -101,6 +92,11 @@ namespace Seckill_dotnet
 
             // 熔断降级策略
 
+            // 健康检查
+            builder.Services.AddHealthChecks()
+                .AddCheck<RabbitMQHealthCheck>("rabbitmq")
+                .AddCheck<RedisHealthCheck>("redis");
+
             var app = builder.Build();
 
             // Configure the HTTP request pipeline.
@@ -111,7 +107,7 @@ namespace Seckill_dotnet
             }
 
             app.UseAuthorization();
-
+            app.MapHealthChecks("/health");
 
             app.MapControllers();
 

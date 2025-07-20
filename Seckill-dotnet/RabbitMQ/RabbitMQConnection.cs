@@ -1,57 +1,101 @@
 ﻿using RabbitMQ.Client;
+using RabbitMQ.Client.Events;
 
 namespace Seckill_dotnet.RabbitMQ
 {
-    public class RabbitMQConnection : IRabbitMQConnection
+    public class RabbitMQConnection : IDisposable
     {
-        private readonly ConnectionFactory _factory;
-        private readonly IConnection _connection;
-        private bool _isDisposed;
+        private readonly IConnectionFactory _factory;
+        private IConnection _connection;
+        private readonly ILogger<RabbitMQConnection> _logger;
+        private readonly RabbitMqChannelManager _channelManager;
+        private bool _disposed;
 
-        public RabbitMQConnection(ConnectionFactory factory)
+        public RabbitMQConnection(IConnectionFactory factory, ILogger<RabbitMQConnection> logger, RabbitMqChannelManager channelManager)
         {
             _factory = factory ?? throw new ArgumentNullException(nameof(factory));
-            _connection = factory.CreateConnectionAsync().Result;
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _channelManager = channelManager ?? throw new ArgumentNullException(nameof(channelManager));
+
+            _connection = _factory.CreateConnectionAsync().Result;
+            RegisterConnectionEvents(_connection);
         }
 
-        public async Task<IChannel> CreateChannel()
+        private void RegisterConnectionEvents(IConnection connection)
         {
-            EnsureNotDisposed();
-            return await _connection.CreateChannelAsync();
+            connection.ConnectionShutdownAsync += OnConnectionShutdownAsync;
+            connection.ConnectionBlockedAsync += OnConnectionBlockedAsync;
+            connection.ConnectionUnblockedAsync += OnConnectionUnblockedAsync;
+        }
+
+        private Task OnConnectionShutdownAsync(object sender, ShutdownEventArgs e)
+        {
+            _logger.LogWarning("RabbitMQ连接关闭: {ReplyText}", e.ReplyText);
+            if (e.Initiator != ShutdownInitiator.Application)
+            {
+                // 异步重连
+                _ = Task.Run(Reconnect);
+            }
+            return Task.CompletedTask;
+        }
+
+        private Task OnConnectionBlockedAsync(object sender, ConnectionBlockedEventArgs e)
+        {
+            _logger.LogWarning("连接被阻塞: {Reason}", e.Reason);
+            return Task.CompletedTask;
+        }
+
+        private Task OnConnectionUnblockedAsync(object sender, AsyncEventArgs e)
+        {
+            _logger.LogInformation("连接解除阻塞");
+            return Task.CompletedTask;
+        }
+
+        private async Task Reconnect()
+        {
+            int attempt = 0;
+            while (!_disposed)
+            {
+                try
+                {
+                    attempt++;
+                    _logger.LogInformation("尝试重新连接 (第{Attempt}次)", attempt);
+                    _connection?.Dispose();
+                    _connection = _factory.CreateConnectionAsync().Result;
+                    RegisterConnectionEvents(_connection);
+                    _logger.LogInformation("RabbitMQ重连成功");
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    var delay = TimeSpan.FromSeconds(Math.Min(60, Math.Pow(2, attempt)));
+                    _logger.LogWarning("重连失败: {Message}，{Delay}秒后重试", ex.Message, delay.TotalSeconds);
+                    await Task.Delay(delay);
+                }
+            }
         }
 
         public void Dispose()
         {
-            Dispose(true);
+            if (_disposed) return;
+            _disposed = true;
+
+            _channelManager?.Dispose();
+            try
+            {
+                _connection?.CloseAsync();
+                _connection?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "RabbitMQ连接关闭异常");
+            }
             GC.SuppressFinalize(this);
         }
 
-        protected virtual void Dispose(bool disposing)
+        public bool IsHealthy()
         {
-            if (_isDisposed) return;
-
-            if (disposing)
-            {
-                // Free any other managed objects here.
-            }
-
-            // Free any unmanaged objects here.
-            _connection.Dispose();
-
-            _isDisposed = true;
-        }
-
-        ~RabbitMQConnection()
-        {
-            Dispose(false);
-        }
-
-        private void EnsureNotDisposed()
-        {
-            if (_isDisposed)
-            {
-                throw new ObjectDisposedException(nameof(RabbitMQConnection));
-            }
+            return _connection != null && _connection.IsOpen;
         }
     }
 }
