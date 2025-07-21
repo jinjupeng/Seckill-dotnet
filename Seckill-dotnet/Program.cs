@@ -2,6 +2,8 @@
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using NLog;
+using NLog.Extensions.Logging;
 using RabbitMQ.Client;
 using RedLockNet;
 using RedLockNet.SERedis;
@@ -20,6 +22,13 @@ namespace Seckill_dotnet
         public static void Main(string[] args)
         {
             var builder = WebApplication.CreateBuilder(args);
+            var env = builder.Environment;
+            LogManager.Setup().LoadConfigurationFromFile($"nlog.config", optional: true);
+
+
+            builder.Logging.ClearProviders();
+            builder.Logging.AddNLog(); 
+            builder.Services.AddNLog();
 
             // Add services to the container.
 
