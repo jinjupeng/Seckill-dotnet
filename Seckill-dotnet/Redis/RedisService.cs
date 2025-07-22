@@ -19,18 +19,18 @@ namespace Seckill_dotnet.Redis
         {
             _redis = redis;
             _logger = logger;
-            // 定义熔断策略：当连续5次失败，熔断30秒
+            // 定义熔断策略：当连续3次失败，熔断10秒
             _circuitBreakerPolicy = Policy
                 .Handle<RedisException>()
                 .Or<RedisConnectionException>()
                 .Or<RedisTimeoutException>()
                 .Or<RedisCommandException>()
                 .CircuitBreakerAsync(
-                    exceptionsAllowedBeforeBreaking: 3,
-                    durationOfBreak: TimeSpan.FromSeconds(30),
+                    exceptionsAllowedBeforeBreaking: 3, // 当连续请求3次失败，熔断器将打开
+                    durationOfBreak: TimeSpan.FromSeconds(10),
                     onBreak: (ex, breakDelay) =>
                     {
-                        _logger.LogWarning($"Redis熔断器开启，熔断时间：{breakDelay.TotalSeconds}秒。");
+                        _logger.LogInformation($"Redis熔断器开启，熔断时间：{breakDelay.TotalSeconds}秒。");
                         // 表示Redis不可用
                         SetRedisStatus(false);
                         //熔断器回调（onBreak和onReset）是由Polly的策略执行的，而Polly的策略执行是线程安全的，所以我们在回调中修改字段是安全的。同时，我们通过volatile确保其他线程能立即看到变化。
@@ -45,12 +45,14 @@ namespace Seckill_dotnet.Redis
                     {
                         _logger.LogInformation("Redis熔断器半开启，尝试恢复。");
                         // 半开启状态，尝试恢复连接
-                        await IsRedisAvailableAsync();
+                        await RetryAsync();
                     }
                 );
         }
 
-        // 读取时直接访问（无Interlocked开销）
+        /// <summary>
+        /// 读取时直接访问（无Interlocked开销）
+        /// </summary>
         public bool IsRedisAvailable => _isRedisAvailable == true;
 
         /// <summary>
@@ -61,9 +63,13 @@ namespace Seckill_dotnet.Redis
         /// <returns></returns>
         public async Task<bool> PreheatInventoryAsync(string productId, int stock)
         {
-            var db = _redis.GetDatabase();
-            string stockKey = string.Format(SeckillConst.SeckillProductStockKey, productId);
-            return await db.StringSetAsync(stockKey, stock);
+            // 使用熔断策略包裹
+            return await _circuitBreakerPolicy.ExecuteAsync(async () =>
+            {
+                var db = _redis.GetDatabase();
+                string stockKey = string.Format(SeckillConst.SeckillProductStockKey, productId);
+                return await db.StringSetAsync(stockKey, stock);
+            });
         }
 
         /// <summary>
@@ -132,10 +138,14 @@ namespace Seckill_dotnet.Redis
          */
         public async Task<bool> CanUserSeckillAsync(string userId, string productId)
         {
-            var db = _redis.GetDatabase();
-            string userSeckillResultKey = string.Format(SeckillConst.SeckillResultKey, userId, productId);
-            var result = await db.StringGetAsync(userSeckillResultKey);
-            return result.IsNullOrEmpty;  // 如果返回 null，表示用户没有秒杀过
+            // 使用熔断策略包裹
+            return await _circuitBreakerPolicy.ExecuteAsync(async () =>
+            {
+                var db = _redis.GetDatabase();
+                string userSeckillResultKey = string.Format(SeckillConst.SeckillResultKey, userId, productId);
+                var result = await db.StringGetAsync(userSeckillResultKey);
+                return result.IsNullOrEmpty;  // 如果返回 null，表示用户没有秒杀过
+            });
         }
 
         /**
@@ -146,14 +156,21 @@ namespace Seckill_dotnet.Redis
          */
         public async Task<bool> SetUserSeckillResultAsync(string userId, string productId)
         {
-            var db = _redis.GetDatabase();
-            string userSeckillResultKey = string.Format(SeckillConst.SeckillResultKey, userId, productId);
-            bool setResult = await db.StringSetAsync(userSeckillResultKey, "true", TimeSpan.FromMinutes(60));
-            return setResult;
+            // 使用熔断策略包裹
+            return await _circuitBreakerPolicy.ExecuteAsync(async () =>
+            {
+                var db = _redis.GetDatabase();
+                string userSeckillResultKey = string.Format(SeckillConst.SeckillResultKey, userId, productId);
+                bool setResult = await db.StringSetAsync(userSeckillResultKey, "true", TimeSpan.FromMinutes(60));
+                return setResult;
+            });
         }
 
-
-        public async Task<bool> IsRedisAvailableAsync()
+        /// <summary>
+        /// 重试
+        /// </summary>
+        /// <returns></returns>
+        public async Task<bool> RetryAsync()
         {
             try
             {
@@ -171,23 +188,26 @@ namespace Seckill_dotnet.Redis
             }
             catch (BrokenCircuitException)  // 熔断器打开状态
             {
-                Console.WriteLine("[熔断拦截] 拒绝访问Redis");
+                _logger.LogInformation("[熔断拦截] 拒绝访问Redis");
                 return false;
             }
             catch (Exception ex)  // 其他异常
             {
-                Console.WriteLine($"[检查失败] {ex.Message}");
+                _logger.LogInformation(ex, "[Redis检查失败] {message}", ex.Message);
                 return false;
             }
         }
 
-        // 可选：定期运行的健康检查
+        /// <summary>
+        /// 可选：定期运行的健康检查
+        /// </summary>
+        /// <param name="ct"></param>
+        /// <returns></returns>
         public async Task RunPeriodicHealthCheckAsync(CancellationToken ct)
         {
             while (!ct.IsCancellationRequested)
             {
-                var isHealthy = await IsRedisAvailableAsync();
-                Console.WriteLine($"[健康检查] Redis状态: {(isHealthy ? "健康" : "故障")}");
+                _logger.LogInformation($"[健康检查] Redis状态: {(IsRedisAvailable ? "健康" : "故障")}");
 
                 await Task.Delay(TimeSpan.FromSeconds(10), ct);
             }
@@ -198,7 +218,7 @@ namespace Seckill_dotnet.Redis
             if (_isRedisAvailable != isAvailable)
             {
                 _isRedisAvailable = isAvailable;
-                Console.WriteLine($"[状态变更] Redis服务: {(isAvailable ? "已恢复" : "不可用")}");
+                _logger.LogInformation($"[状态变更] Redis服务: {(isAvailable ? "已恢复" : "不可用")}");
 
                 // 这里可以添加通知逻辑（邮件/短信/日志等）
                 // if (!isAvailable) NotifyServiceTeam();

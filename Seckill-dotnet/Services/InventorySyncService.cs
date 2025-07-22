@@ -30,14 +30,19 @@ namespace Seckill_dotnet.Services
             return Task.CompletedTask;
         }
 
+        /// <summary>
+        /// 定时同步库存到Redis
+        /// </summary>
+        /// <param name="state"></param>
+        /// <returns></returns>
         private async Task SyncInventory(object state)
         {
             using var scope = _services.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<SeckillContext>();
             var redis = scope.ServiceProvider.GetRequiredService<IConnectionMultiplexer>();
-            var fallbackService = scope.ServiceProvider.GetRequiredService<RedisService>();
+            var redisService = scope.ServiceProvider.GetRequiredService<RedisService>();
 
-            if (!await fallbackService.IsRedisAvailableAsync()) return;
+            if (!redisService.IsRedisAvailable) return;
 
             try
             {

@@ -25,7 +25,12 @@ services:
         condition: service_healthy
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
-      - Redis__ConnectionString=redis:6379,password=$${REDIS_PASSWORD},abortConnect=false
+      - Redis__DefaultConnection=redis:6379,password=$${REDIS_PASSWORD},abortConnect=false
+      - Redis__RedlockEndpoints='["redis:6379,password=$${REDIS_PASSWORD},defaultDatabase=0,ssl=false","redislock:6380,password=$${REDIS_PASSWORD},defaultDatabase=0,ssl=false"]'
+      - Redis__RedlockSettings__RetryCount=5
+      - Redis__RedlockSettings__ExpiryTime=300
+      - Redis__RedlockSettings__WaitTime=200
+      - Redis__RedlockSettings__RetryDelay=50
       - RabbitMQ__HostName=rabbitmq
       - RabbitMQ__Port=5672
       - RabbitMQ__UserName=guest
@@ -44,6 +49,24 @@ services:
       - app-network
     volumes:
       - redis-data:/data
+    environment:
+      - REDIS_PASSWORD=123456
+    command: redis-server --requirepass $${REDIS_PASSWORD} --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "$${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+  # Redis2 服务定义
+  redislock: 
+    image: redis:latest
+    container_name: redis
+    ports:
+      - "6380:6380"
+    networks:
+      - app-network
+    volumes:
+      - redislock-data:/data
     environment:
       - REDIS_PASSWORD=123456
     command: redis-server --requirepass $${REDIS_PASSWORD} --appendonly yes
@@ -100,5 +123,6 @@ services:
 # 数据卷定义
 volumes:
   redis-data:
+  redislock-data:
   rabbitmq-data:
   mysql-data:

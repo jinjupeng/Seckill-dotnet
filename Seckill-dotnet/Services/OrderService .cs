@@ -39,7 +39,7 @@ namespace Seckill_dotnet.Services
 
 
                         // 创建新的订单，保存到数据库
-                        var order = new Order
+                        var order = new Infrastructure.Order
                         {
                             Id = message.OrderId,
                             UserId = message.UserId,
@@ -84,6 +84,37 @@ namespace Seckill_dotnet.Services
                     return false; // 获取锁失败，表示其他实例正在处理该订单
                 }
             }
+        }
+
+        /// <summary>
+        /// 初始化商品库存，将商品库存写入到数据库
+        /// 正常情况下是将数据库的库存数据同步到Redis缓存，但是为了模拟数据，将库存数据通过接口同步给缓存和数据库
+        /// </summary>
+        /// <param name="productId"></param>
+        /// <param name="stock"></param>
+        /// <returns></returns>
+        public async Task InitializeProductStockAsync(string productId, int stock)
+        {
+            var product = _context.Products.AsNoTracking().FirstOrDefault(x => x.Id == productId);
+            if (product == null)
+            {
+                product = new Product();
+                product.Id = productId;
+                product.Name = productId;
+                product.Stock = stock;
+                product.LastSyncTime = DateTime.Now;
+
+                await _context.AddAsync(product);
+            }
+            else
+            {
+                product.Stock = stock;
+                product.LastSyncTime = DateTime.Now;
+
+                _context.Update(product);
+            }
+
+            await _context.SaveChangesAsync();
         }
     }
 }

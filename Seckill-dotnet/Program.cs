@@ -10,6 +10,7 @@ using RedLockNet.SERedis;
 using RedLockNet.SERedis.Configuration;
 using Seckill_dotnet.Config;
 using Seckill_dotnet.Infrastructure;
+using Seckill_dotnet.Middlewares;
 using Seckill_dotnet.RabbitMQ;
 using Seckill_dotnet.Redis;
 using Seckill_dotnet.Services;
@@ -41,24 +42,31 @@ namespace Seckill_dotnet
             builder.Services.AddDbContext<SeckillContext>(options =>
                 options.UseMySQL(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-            // 配置 Redis 连接
-            var redisConnection = builder.Configuration.GetValue<string>("Redis:ConnectionString");
-            var redis = ConnectionMultiplexer.Connect(redisConnection);
-            builder.Services.AddSingleton<IConnectionMultiplexer>(redis);
+            // Redis绑定配置
+            var redisSection = builder.Configuration.GetSection("Redis");
+            var redisSettings = redisSection.Get<RedisSettings>();
 
-            // 添加Redis连接多路复用器
-            builder.Services.AddSingleton<RedLockMultiplexer>(provider =>
-                ConnectionMultiplexer.Connect(redisConnection));
+            // 1. 配置 StackExchange.Redis 作为主 Redis 客户端
+            builder.Services.AddSingleton<IConnectionMultiplexer>(serviceProvider =>
+                ConnectionMultiplexer.Connect(redisSettings.DefaultConnection));
 
-            // 注册RedLock工厂（单例）
-            builder.Services.AddSingleton<IDistributedLockFactory>(provider =>
+
+            // 2. 配置 Redlock.NET 使用多个 Redis 节点
+            builder.Services.AddSingleton<IDistributedLockFactory>(serviceProvider =>
             {
-                var multiplexers = new List<RedLockMultiplexer>
+                // 配置多个 Redis 节点
+                List<RedLockMultiplexer> multiplexers = redisSettings.RedlockEndpoints.Select(endpoint =>
                 {
-                    provider.GetRequiredService<RedLockMultiplexer>()
-                };
-
-                return RedLockFactory.Create(multiplexers);
+                    var cfg = ConfigurationOptions.Parse(endpoint);
+                    // 添加Redis连接多路复用器
+                    RedLockMultiplexer redLockMultiplexer = ConnectionMultiplexer.Connect(cfg);
+                    return redLockMultiplexer;
+                }).ToList();
+                // 注册RedLock工厂（单例）
+                return RedLockFactory.Create(multiplexers, new RedLockRetryConfiguration(
+                    retryCount: redisSettings.RedlockSettings.RetryCount,
+                    retryDelayMs: redisSettings.RedlockSettings.RetryDelay
+                ));
             });
 
 
@@ -89,7 +97,6 @@ namespace Seckill_dotnet
             builder.Services.AddHostedService<InventorySyncService>(); // 后台服务，Redis库存同步
 
             builder.Services.AddScoped<SeckillService>();
-            builder.Services.AddScoped<InventoryService>();
             builder.Services.AddScoped<OrderService>();
 
             builder.Services.AddSingleton<RedisService>();
@@ -153,6 +160,7 @@ namespace Seckill_dotnet
                 app.UseSwagger();
                 app.UseSwaggerUI();
             }
+            app.UseMiddleware<ExceptionMiddleware>(); // 全局异常过滤
 
             app.UseAuthorization();
             app.MapHealthChecks("/health");
