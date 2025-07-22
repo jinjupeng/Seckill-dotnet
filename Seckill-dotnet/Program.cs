@@ -45,6 +45,10 @@ namespace Seckill_dotnet
             // Redis绑定配置
             var redisSection = builder.Configuration.GetSection("Redis");
             var redisSettings = redisSection.Get<RedisSettings>();
+            if (redisSettings?.RedlockEndpoints == null || redisSettings.RedlockEndpoints.Length == 0)
+            {
+                throw new InvalidOperationException("Redis Redlock endpoints not configured");
+            }
 
             // 1. 配置 StackExchange.Redis 作为主 Redis 客户端
             builder.Services.AddSingleton<IConnectionMultiplexer>(serviceProvider =>

@@ -12,7 +12,7 @@ services:
       context: .
       dockerfile: Seckill-dotnet/Dockerfile
     ports:
-    - "8080:80"
+    - "8080:8080"
     - "5000:5000"
     networks:
       - app-network
@@ -27,8 +27,9 @@ services:
         condition: service_healthy
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
-      - Redis__DefaultConnection=redis:6379,password=$${REDIS_PASSWORD},abortConnect=false
-      - Redis__RedlockEndpoints='["redis:6379,password=$${REDIS_PASSWORD},defaultDatabase=0,ssl=false","redislock:6380,password=$${REDIS_PASSWORD},defaultDatabase=0,ssl=false"]'
+      - Redis__DefaultConnection=redis:6379,password=123456 # 分隔符必须使用双下划线
+      - Redis__RedlockEndpoints__0=redis:6379,password=123456
+      - Redis__RedlockEndpoints__1=redislock:6380,password=123456
       - Redis__RedlockSettings__RetryCount=5
       - Redis__RedlockSettings__ExpiryTime=300
       - Redis__RedlockSettings__WaitTime=200
