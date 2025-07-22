@@ -1,12 +1,13 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Seckill_dotnet.Infrastructure;
+using Seckill_dotnet.Models;
 using StackExchange.Redis;
 
 namespace Seckill_dotnet.Services
 {
-    /**
-    *库存服务
-    */
+    /// <summary>
+    /// 库存服务
+    /// </summary>
     public class InventoryService
     {
         private readonly IConnectionMultiplexer _redis;
@@ -30,7 +31,7 @@ namespace Seckill_dotnet.Services
             // 正常情况下是将数据库的库存数据同步到Redis缓存，但是为了模拟数据，将库存数据通过接口同步给缓存和数据库
             
             var db = _redis.GetDatabase();
-            await db.StringSetAsync($"product_stock:{productId}", stock);
+            await db.StringSetAsync(string.Format(SeckillConst.SeckillProductStockKey, productId), stock);
 
             var product = _seckillContext.Products.AsNoTracking().FirstOrDefault(x => x.Id == productId);
             if (product == null)
@@ -39,12 +40,14 @@ namespace Seckill_dotnet.Services
                 product.Id = productId;
                 product.Name = productId;
                 product.Stock = stock;
+                product.LastSyncTime = DateTime.Now;
 
                 await _seckillContext.AddAsync(product);
             }
             else
             {
                 product.Stock = stock;
+                product.LastSyncTime = DateTime.Now;
 
                 _seckillContext.Update(product);
             }

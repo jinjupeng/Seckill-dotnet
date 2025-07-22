@@ -86,10 +86,13 @@ namespace Seckill_dotnet
             builder.Services.AddSingleton<RabbitMqChannelManager>();
 
             builder.Services.AddHostedService<OrderProcessingWorker>(); // 后台服务消费者，模拟订单处理
+            builder.Services.AddHostedService<InventorySyncService>(); // 后台服务，Redis库存同步
 
             builder.Services.AddScoped<SeckillService>();
             builder.Services.AddScoped<InventoryService>();
             builder.Services.AddScoped<OrderService>();
+
+            builder.Services.AddSingleton<RedisService>();
 
             // 接口限流操作
             builder.Services.AddRateLimiter(options => {
@@ -138,7 +141,7 @@ namespace Seckill_dotnet
                     // 生产环境中可能需要终止应用
                     if (app.Environment.IsProduction())
                     {
-                        throw;
+                        //throw;
                     }
                 }
             }

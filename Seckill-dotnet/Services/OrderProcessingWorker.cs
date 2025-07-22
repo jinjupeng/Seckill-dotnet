@@ -3,7 +3,6 @@ using Seckill_dotnet.Models;
 using Seckill_dotnet.RabbitMQ;
 using System.Text;
 using System.Text.Json;
-using System.Threading;
 
 namespace Seckill_dotnet.Services
 {
@@ -43,7 +42,7 @@ namespace Seckill_dotnet.Services
                         Console.WriteLine("收到消息：" + mesjson);
                         var message = JsonSerializer.Deserialize<OrderMessage>(mesjson);
 
-                        await orderService.CreateOrderAsync(message);
+                        return await orderService.CreateOrderAsync(message);
                     }, stoppingToken);
 
                     await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken); // 添加延迟，避免空循环消耗CPU资源

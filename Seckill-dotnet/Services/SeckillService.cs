@@ -1,24 +1,27 @@
-﻿using RedLockNet;
+﻿using Microsoft.EntityFrameworkCore;
+using RedLockNet;
 using Seckill_dotnet.Infrastructure;
 using Seckill_dotnet.Models;
 using Seckill_dotnet.RabbitMQ;
-using StackExchange.Redis;
+using Seckill_dotnet.Redis;
 
 namespace Seckill_dotnet.Services
 {
     public class SeckillService
     {
-        private readonly IConnectionMultiplexer _redis;
+        private readonly RedisService _redisService;
         private readonly SeckillContext _context;
         private readonly RabbitMQService _rabbitMQService;
         private readonly IDistributedLockFactory _lockFactory;
+        private readonly ILogger<SeckillService> _logger;
 
-        public SeckillService(IConnectionMultiplexer redis, SeckillContext context, RabbitMQService rabbitMQService, IDistributedLockFactory lockFactory)
+        public SeckillService(RedisService redisService, SeckillContext context, RabbitMQService rabbitMQService, IDistributedLockFactory lockFactory, ILogger<SeckillService> logger)
         {
-            _redis = redis;
+            _redisService = redisService;
             _context = context;
             _rabbitMQService = rabbitMQService;
             _lockFactory = lockFactory;
+            _logger = logger;
         }
 
         /**
@@ -27,58 +30,136 @@ namespace Seckill_dotnet.Services
          * @param productId 商品ID
          * @return 是否秒杀成功
          */
-        public async Task<bool> ProcessSeckillAsync(string userId, string productId)
+        public async Task<SeckillResult> ProcessSeckillAsync(string userId, string productId)
         {
-            var db = _redis.GetDatabase();
-
-            // 1. 检查用户是否已秒杀过
-            if (!await CanUserSeckillAsync(userId, productId))
+            try
             {
-                return false;  // 用户已秒杀过
+                if (_redisService.IsRedisAvailable())
+                {
+                    var isSecKill = await _redisService.CanUserSeckillAsync(userId, productId);
+
+                    // 1. 检查用户是否已秒杀过
+                    if (!isSecKill)
+                    {
+                        return SeckillResult.Failure("用户已秒杀过该商品");
+                    }
+
+                    // 2. 从 Redis 获取库存，并尝试减少库存
+                    var stock = await _redisService.DecrementInventoryAsync(productId);
+
+                    if (stock <= 0)
+                    {
+                        return SeckillResult.Failure("库存不足");
+                    }
+
+                    // 3. 秒杀成功，记录用户秒杀状态到 Redis
+                    bool setResult = await _redisService.SetUserSeckillResultAsync(userId, productId);
+
+                    if (!setResult)
+                    {
+                        return SeckillResult.Failure("用户抢单失败"); // 设置用户秒杀状态失败
+                    }
+                    // 4. 发送订单消息到RabbitMQ
+                    OrderMessage orderMessage = new OrderMessage
+                    {
+                        UserId = userId,
+                        ProductId = productId,
+                        OrderId = Guid.NewGuid().ToString(),
+                    };
+
+                    await _rabbitMQService.SendAsync("", "seckill_orders", orderMessage);
+
+
+                    return SeckillResult.Success();  // 秒杀成功
+                }
+                else
+                {
+                    // redis服务不可用时，使用数据库回退处理
+                    SeckillRequest request = new SeckillRequest()
+                    {
+                        UserId = userId,
+                        ProductId = productId
+                    };
+                    return await DatabaseFallbackSeckillAsync(request);
+                }
             }
-
-            // 2. 从 Redis 获取库存，并尝试减少库存
-            var stockKey = $"product_stock:{productId}";
-            var stock = await db.StringDecrementAsync(stockKey);
-
-            if (stock < 0)
+            catch
             {
-                return false;  // 库存不足，秒杀失败
+                // redis服务不可用时，使用数据库回退处理
+                SeckillRequest request = new SeckillRequest()
+                {
+                    UserId = userId,
+                    ProductId = productId
+                };
+                return await DatabaseFallbackSeckillAsync(request);
             }
-
-            // 3. 秒杀成功，记录用户秒杀状态到 Redis
-            bool setResult = await db.StringSetAsync($"user:{userId}:seckill:{productId}", "true", TimeSpan.FromMinutes(10));
-
-            if (!setResult)
-            {
-                return false;  // 设置用户秒杀状态失败
-            }
-            // 4. 发送订单消息到RabbitMQ
-            OrderMessage orderMessage = new OrderMessage
-            {
-                UserId = userId,
-                ProductId = productId,
-                OrderId = Guid.NewGuid().ToString(),
-            };
-
-            await _rabbitMQService.SendAsync("", "seckill_orders", orderMessage);
-
-
-            return true;  // 秒杀成功
         }
 
-        /**
-         * 检查用户是否已经秒杀过该商品
-         * @param userId 用户ID
-         * @param productId 商品ID
-         * @return 是否可以秒杀
-         */
-        private async Task<bool> CanUserSeckillAsync(string userId, string productId)
+
+        /// <summary>
+        /// 当Redis服务不可用时，使用数据库回退处理秒杀请求
+        /// </summary>
+        /// <param name="request"></param>
+        /// <returns></returns>
+        private async Task<SeckillResult> DatabaseFallbackSeckillAsync(SeckillRequest request)
         {
-            var db = _redis.GetDatabase();
-            var userKey = $"user:{userId}:seckill:{productId}";
-            var result = await db.StringGetAsync(userKey);
-            return result.IsNullOrEmpty;  // 如果返回 null，表示用户没有秒杀过
+            // 使用数据库分布式锁
+            string resourceId = string.Format(SeckillConst.SeckillLockResourceId, request.ProductId); 
+            using var redLock = await _lockFactory.CreateLockAsync(
+                resourceId,
+                TimeSpan.FromSeconds(30),
+                TimeSpan.FromSeconds(5),
+                TimeSpan.FromSeconds(0.5));
+
+            if (!redLock.IsAcquired)
+                return SeckillResult.Failure("系统繁忙，请重试");
+
+            // 数据库事务处理
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var product = await _context.Products
+                    .Where(p => p.Id == request.ProductId)
+                    .FirstOrDefaultAsync();
+
+                if (product == null)
+                    return SeckillResult.Failure("商品不存在");
+
+                if (product.Stock <= 0)
+                    return SeckillResult.Failure("库存不足");
+
+                // 扣减库存
+                product.Stock--;
+                // product.Version++; // 乐观锁  ValueGeneratedOnAddOrUpdate 已自动新增版本号
+                product.LastSyncTime = DateTime.Now;
+
+                // 创建订单
+                var order = new Infrastructure.Order
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    UserId = request.UserId,
+                    ProductId = request.ProductId,
+                    OrderTime = DateTime.Now
+                };
+
+                await _context.Orders.AddAsync(order);
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return SeckillResult.Success(order.Id);
+            }
+            catch (DbUpdateConcurrencyException ex)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogWarning(ex, "库存并发冲突");
+                return SeckillResult.Failure("库存冲突，请重试");
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, "数据库秒杀异常");
+                return SeckillResult.Failure("系统错误");
+            }
         }
     }
 }

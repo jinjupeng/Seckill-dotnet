@@ -16,6 +16,9 @@ namespace Seckill_dotnet.Infrastructure
             modelBuilder.Entity<Product>(entity =>
             {
                 entity.HasKey(e => e.Id);
+                entity.Property(e => e.Version)
+                    .IsConcurrencyToken()
+                    .ValueGeneratedOnAddOrUpdate(); // 乐观锁版本号
             });
 
             modelBuilder.Entity<Order>(entity =>

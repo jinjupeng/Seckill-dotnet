@@ -1,4 +1,5 @@
 ﻿CodeFirst migrations for the Seckill project
 
 Add-Migration InitialCreate
+Add-Migration UpdateProduct
 Update-Database

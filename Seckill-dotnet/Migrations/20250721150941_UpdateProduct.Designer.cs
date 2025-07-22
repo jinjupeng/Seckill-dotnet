@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Seckill_dotnet.Infrastructure;
 
@@ -10,9 +11,11 @@ using Seckill_dotnet.Infrastructure;
 namespace Seckill_dotnet.Migrations
 {
     [DbContext(typeof(SeckillContext))]
-    partial class SeckillContextModelSnapshot : ModelSnapshot
+    [Migration("20250721150941_UpdateProduct")]
+    partial class UpdateProduct
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

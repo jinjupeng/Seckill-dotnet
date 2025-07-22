@@ -49,7 +49,7 @@ namespace Seckill_dotnet.RabbitMQ
             }
         }
 
-        public async Task ReceiveAsync(string queueName, Func<IChannel, byte[], Task> callback, CancellationToken cancellationToken = default)
+        public async Task ReceiveAsync(string queueName, Func<IChannel, byte[], Task<bool>> callback, CancellationToken cancellationToken = default)
         {
             var channel = await _channelManager.GetChannelForQueue(queueName);
 
@@ -63,8 +63,11 @@ namespace Seckill_dotnet.RabbitMQ
                 try
                 {
                     // 直接传递 model 和 body 给 callback，不需要转换
-                    await callback(channel, body);
-                    await SafeAckAsync(channel, ea.DeliveryTag, cancellationToken);
+                    bool result = await callback(channel, body);
+                    if (result) // 处理成功后才进行消息确认
+                    {
+                        await SafeAckAsync(channel, ea.DeliveryTag, cancellationToken);
+                    }
                 }
                 catch (Exception ex)
                 {
