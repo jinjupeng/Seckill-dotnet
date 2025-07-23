@@ -51,7 +51,10 @@ namespace Seckill_dotnet.Controllers
             // 1. 验证用户身份（JWT等）
 
             request.UserId = new Random().Next().ToString();
-            request.ProductId = "seckill_product_test";
+            if (string.IsNullOrEmpty(request.ProductId))
+            {
+                request.ProductId = "string";
+            }
             var result = await _seckillService.ProcessSeckillAsync(request.UserId, request.ProductId);
             return Ok(result);
         }

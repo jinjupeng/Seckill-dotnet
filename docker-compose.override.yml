@@ -1,9 +1,9 @@
 services:
   seckill-dotnet:
     environment:
-      - ASPNETCORE_ENVIRONMENT=Development # Ö¸¶¨ ASP.NET Core ÔËÐÐ»·¾³Îª¿ª·¢Ä£Ê½£¨Development£©
-      - ASPNETCORE_URLS=http://:8080;https://:8081 # Ö¸¶¨ ASP.NET Core ÔÚÈÝÆ÷ÄÚ¼àÌýµÄ HTTP ¶Ë¿ÚÎª 8080£¬HTTPS ¶Ë¿ÚÎª 8081
+      - ASPNETCORE_ENVIRONMENT=Development # æŒ‡å®š ASP.NET Core è¿è¡ŒçŽ¯å¢ƒä¸ºå¼€å‘æ¨¡å¼ï¼ˆDevelopmentï¼‰
+      - ASPNETCORE_URLS=http://0.0.0.0:8080;http://0.0.0.0:8081 # æŒ‡å®š ASP.NET Core åœ¨å®¹å™¨å†…ç›‘å¬çš„ HTTP ç«¯å£ä¸º 8080ï¼ŒHTTPS ç«¯å£ä¸º 8081
     ports:
-      - "8080:8080" # Ó³ÉäÈÝÆ÷µÄ 8080 ¶Ë¿Úµ½Ö÷»úµÄ 8080 ¶Ë¿Ú
-      - "8081:8081" # Ó³ÉäÈÝÆ÷µÄ 8081 ¶Ë¿Úµ½Ö÷»úµÄ 8081 ¶Ë¿Ú
-      #- "8080" # ËÞÖ÷Ëæ»ú¶Ë¿Ú ¡ú ÈÝÆ÷ 8080 ¶Ë¿Ú
+      - "8080:8080" # æ˜ å°„å®¹å™¨çš„ 8080 ç«¯å£åˆ°ä¸»æœºçš„ 8080 ç«¯å£
+      - "8081:8081" # æ˜ å°„å®¹å™¨çš„ 8081 ç«¯å£åˆ°ä¸»æœºçš„ 8081 ç«¯å£
+      #- "8080" # å®¿ä¸»éšæœºç«¯å£ â†’ å®¹å™¨ 8080 ç«¯å£

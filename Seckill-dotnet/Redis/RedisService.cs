@@ -84,16 +84,15 @@ namespace Seckill_dotnet.Redis
             {
                 var db = _redis.GetDatabase();
                 // 使用Lua脚本原子性地检查库存并减少，当库存大于0时减少，否则返回-1；和StringDecrement方法的区别和联系，都是原子性操作，但Lua脚本可以返回0，而StringDecrement会一直减小到负数。
-                var script = LuaScript.Prepare(
+                var scriptText =
                     "local stock = tonumber(redis.call('get', KEYS[1])) " +
                     "if stock and stock > 0 then " +
                     "   return redis.call('decr', KEYS[1]) " +
                     "else " +
                     "   return -1 " +
-                    "end"
-                );
+                    "end";
                 string stockKey = string.Format(SeckillConst.SeckillProductStockKey, productId);
-                var result = await db.ScriptEvaluateAsync(script, new RedisKey[] { stockKey });
+                var result = await db.ScriptEvaluateAsync(scriptText, new RedisKey[] { stockKey });
                 return (long)result;
             });
         }
