@@ -1,7 +1,9 @@
 services:
   seckill-dotnet:
     environment:
-      - ASPNETCORE_ENVIRONMENT=Development
-      - ASPNETCORE_HTTP_PORTS=8080
+      - ASPNETCORE_ENVIRONMENT=Development # 指定 ASP.NET Core 运行环境为开发模式（Development）
+      - ASPNETCORE_URLS=http://:8080;https://:8081 # 指定 ASP.NET Core 在容器内监听的 HTTP 端口为 8080，HTTPS 端口为 8081
     ports:
-      - "8080"
+      - "8080:8080" # 映射容器的 8080 端口到主机的 8080 端口
+      - "8081:8081" # 映射容器的 8081 端口到主机的 8081 端口
+      #- "8080" # 宿主随机端口 → 容器 8080 端口

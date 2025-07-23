@@ -12,8 +12,8 @@ services:
       context: .
       dockerfile: Seckill-dotnet/Dockerfile
     ports:
-    - "8080:8080"
     - "5000:5000"
+    - "5001:5001"
     networks:
       - app-network
     depends_on:
@@ -27,6 +27,7 @@ services:
         condition: service_healthy
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://:5000;https://:5001 # 支持监听多个端口
       - Redis__DefaultConnection=redis:6379,password=123456 # 分隔符必须使用双下划线
       - Redis__RedlockEndpoints__0=redis:6379,password=123456
       - Redis__RedlockEndpoints__1=redislock:6380,password=123456
@@ -54,9 +55,9 @@ services:
       - redis-data:/data
     environment:
       - REDIS_PASSWORD=123456
-    command: redis-server --requirepass $${REDIS_PASSWORD} --appendonly yes
+    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "$${REDIS_PASSWORD}", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -72,9 +73,9 @@ services:
       - redislock-data:/data
     environment:
       - REDIS_PASSWORD=123456
-    command: redis-server --requirepass $${REDIS_PASSWORD} --appendonly yes
+    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "$${REDIS_PASSWORD}", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -107,7 +108,7 @@ services:
     container_name: mysql
     ports:
       - "3306:3306"
-      - "33060:33060" # MySQL X Protocol 端口" 
+      - "33060:33060" # MySQL X Protocol 端口
     networks:
       - app-network
     environment:
